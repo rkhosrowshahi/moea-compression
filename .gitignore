@@ -5,7 +5,6 @@ results/
 *.png
 *.jpg
 *.jpeg
-checkpoints/
 logs/
 __pycache__/
 *.ipynb
