@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn.utils.prune as prune
-import copy
+
 from collections import OrderedDict
 from tqdm import tqdm
 from pymoo.algorithms.moo.nsga2 import NSGA2
@@ -15,42 +15,14 @@ from pymoo.core.termination import NoTermination
 from pymoo.problems.static import StaticProblem
 from pymoo.indicators.hv import HV
 from compression import huffman_encoding
-from compression.huffman_encoding import HuffmanEncode
-from scipy.sparse import csr_array
 import arg_parser
-# from models.ResNet import resnet18
-from compression.pruning import range_prune
-from compression.quantization import get_compression, get_model_params, merge_bins, compression, uniform_quantization
+from compression.quantization import get_compression, get_model_params, compression, merge_bins_center_to_end, merge_bins_left_to_right
 import utils
 import matplotlib.pyplot as plt
 import scienceplots
 # plt.style.use(['science', 'no-latex'])
 
 float32_bits = 32
-
-args = arg_parser.parse_args()
-# args.dataset = 'cifar10'
-# args.seed = 6
-args.model_path = f"./checkpoints/{args.dataset}/resnet18/0model_SA_best.pth.tar"
-# args.save_dir = f"./logs/cifar100/resnet18/seed{args.seed}/"
-os.makedirs(args.save_dir, exist_ok=True)
-os.makedirs(args.save_dir+'/history/data', exist_ok=True)
-os.makedirs(args.save_dir+'/history/figures', exist_ok=True)
-
-# Define the device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-(
-    model,
-    train_loader_full,
-    val_loader,
-    test_loader,
-    marked_loader,
-    ) = utils.setup_model_dataset(args)
-model.cuda()
-# checkpoint = torch.load(args.model_path, map_location=device)
-# if "state_dict" in checkpoint.keys():
-#     checkpoint = checkpoint["state_dict"]
-# model.load_state_dict(checkpoint, strict=False)
 
 def size_of_model(model, pruned=False, quantized=False, mask=None):
     name = "weight"
@@ -93,7 +65,15 @@ def plot_pf(step, pf_F, args):
                 plt.close()
                 # plt.show()
 
-if __name__ == "__main__":
+def quantizer(args):
+    (
+        model,
+        train_loader_full,
+        val_loader,
+        test_loader,
+        marked_loader,
+        ) = utils.setup_model_dataset(args)
+    model.cuda()
     params = get_model_params(model)
     total_params = len(params)
     pretrained_acc = utils.evaluate(model, train_loader_full)
@@ -103,6 +83,7 @@ if __name__ == "__main__":
 
     if args.merge:
         print("merge enabled")
+        merge_bins = merge_bins_center_to_end if args.merge_method == "center_to_end" else merge_bins_left_to_right
 
     problem = Problem(n_var=1, n_obj=2, n_constr=0, xl=np.array([2]), xu=np.array([1024]))
     # Define the algorithm
@@ -137,17 +118,17 @@ if __name__ == "__main__":
         for i in range(NP):
             compressed_model, centers, bin_indices, codebook, n_not_pruned = compression(X[i], model, args)
             if args.merge:
-                compressed_model, centers, bin_indices = merge_bins(X[i], model, train_loader_full)
+                compressed_model, centers, bin_indices = merge_bins(X[i], model, val_loader)
             n_ws = len(centers)
             c1[i] = total_params - n_not_pruned
             c2[i] = n_ws
-            f1[i] = 1 - utils.evaluate(compressed_model, train_loader_full)
+            f1[i] = 1 - utils.evaluate(compressed_model, val_loader)
             compressed_model_size = size_of_model(compressed_model)
             c3[i] = compressed_model_size
             cr = total_model_size / compressed_model_size
-            f2[i] = -cr
+            f2[i] = -n_ws
 
-            print(f"X: {X[i]}, score: {1-f1[i]}, CR: {f2[i]*-1}, n_prune: {c1[i]}")
+            print(f"X: {X[i]}, f_1: {1-f1[i]}, f_2: {1-f2[i]}, CR: {cr}, n_prune: {c1[i]}")
 
         F = np.column_stack([f1, f2])
         static = StaticProblem(problem, F=F)
@@ -162,7 +143,7 @@ if __name__ == "__main__":
         ind = HV(pf=pf_F)
         hv_val = ind(res.F)
         hv_tracker.append(hv_val)
-        od = OrderedDict({'#_pf': len(res.F), 'HV': hv_val, 'ideal': res.F.min(axis=0), 'nadir': res.F.max(axis=0)})
+        od = OrderedDict({'n_pf': len(res.F), 'HV': hv_val, 'ideal': res.F.min(axis=0), 'nadir': res.F.max(axis=0)})
         pbar.set_postfix(od)
         
         plot_pf(n_gen+1, pf_F, args)
@@ -178,18 +159,34 @@ if __name__ == "__main__":
 
     all_n_pruned = np.zeros(n_pf)
     all_n_ws = np.zeros(n_pf)
+    all_cr = np.zeros(n_pf)
     for i in range(n_pf):
         compressed_model, centers, bin_indices, codebook, n_not_pruned = compression(X[i], model, args)
         if args.merge:
-            compressed_model, centers, bin_indices = merge_bins(X[i], model, train_loader_full)
+            compressed_model, centers, bin_indices = merge_bins(X[i], model, val_loader)
         n_ws = len(centers)
         test_F[i] = utils.evaluate(compressed_model, test_loader, eval=True)
         all_n_pruned[i] = total_params - n_not_pruned
         all_n_ws[i] = n_ws
+        compressed_model_size = size_of_model(compressed_model)
+        all_cr[i] = total_model_size / compressed_model_size
     
     df = pd.DataFrame({"step": range(1, n_steps+1), "hv": hv_tracker})
     df.to_csv(args.save_dir + "/hv_tracker.csv", index=False)
-    df = pd.DataFrame({"K": res.X[:, 0], "alpha": res.X[:, 1], "beta": res.X[:, 2], "train_score": 100*(1-res.F[:, 0]), "CR": -1*res.F[:, 1], "test_score": test_F * 100, "n_pruned": all_n_pruned, "n_ws": all_n_ws})
+    df = pd.DataFrame({"K": res.X[:, 0], "alpha": res.X[:, 1], "beta": res.X[:, 2], "train_score": 100*(1-res.F[:, 0]), "CR": all_cr, "test_score": test_F * 100, "n_pruned": all_n_pruned, "n_ws": all_n_ws})
     df.to_csv(args.save_dir + "/pf_summary.csv", index=False)
     # Save the results
     torch.save({"pf_X": res.X, "pf_F": res.F, "hv_tracker": hv_tracker, "pf_test": test_F}, args.save_dir + "/results.pth.tar")
+
+
+if __name__ == "__main__":
+    args = arg_parser.parse_args()
+    # args.dataset = 'cifar10'
+    # args.seed = 6
+    # args.model_path = f"./checkpoints/{args.dataset}/resnet18/0model_SA_best.pth.tar"
+    # args.save_dir = f"./logs/cifar100/resnet18/seed{args.seed}/"
+    os.makedirs(args.save_dir, exist_ok=True)
+    os.makedirs(args.save_dir+'/history/data', exist_ok=True)
+    os.makedirs(args.save_dir+'/history/figures', exist_ok=True)
+
+    quantizer(args)

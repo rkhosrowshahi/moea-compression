@@ -21,7 +21,7 @@ from scipy.sparse import csr_array
 import arg_parser
 # from models.ResNet import resnet18
 from compression.pruning import range_prune
-from compression.quantization import get_compression, get_model_params, compression, merge_bins_center_to_end, merge_bins_left_to_right, uniform_quantization
+from compression.quantization import get_compression, get_model_params, compression, merge_bins_center_to_end, merge_bins_left_to_right
 import utils
 import matplotlib.pyplot as plt
 import scienceplots
@@ -83,13 +83,9 @@ def prune_and_ub_initialization(NP=100, lb_alpha=0, ub_beta=0, problem=None):
     # max_val = params.max()
     lb, ub = problem.xl, problem.xu
     lb_K, ub_K = lb[0], ub[0]
-    lb_alpha, ub_alpha = lb_alpha, 0
-    lb_beta, ub_beta = 0, ub_beta
-    X = np.zeros((NP, 3))
+    X = np.zeros((NP, 1))
     K = np.linspace(ub_K, lb_K, num=NP).astype(int)
-    a = np.random.uniform(low=lb_alpha, high=ub_alpha, size=(NP, ))
-    b = np.random.uniform(low=lb_beta, high=ub_beta, size=(NP, ))
-    X = np.column_stack([K, a, b])
+    X = np.column_stack([K])
     return X
 
 def plot_pf(step, pf_F, args):  
@@ -123,8 +119,6 @@ if __name__ == "__main__":
     # print(pretrained_val_score)
     total_model_size = size_of_model(model)
     print(total_params, total_model_size)
-    if args.prune:
-        print("prune enabled")
     if args.merge:
         print("merge enabled")
         if args.merge_method == "center_to_end":

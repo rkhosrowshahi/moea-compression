@@ -103,7 +103,7 @@ def parse_args():
     parser.add_argument(
         "--merge_method",
         type=str,
-        default="center_to_end",
+        default="left_to_right",
         help="Choose between: [center_to_end, left_to_right]",
     )
 

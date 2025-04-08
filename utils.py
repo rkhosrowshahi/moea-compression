@@ -156,7 +156,7 @@ def setup_model_dataset(args):
             model = model_dict[args.arch](num_classes=classes)
             
         setup_seed(args.train_seed)
-        checkpoint = load_checkpoint(device="cuda", save_path=f"./checkpoints/cifar10/{args.arch}/", pruning=0, filename="model_SA_best.pth.tar")
+        checkpoint = load_checkpoint(device="cuda", save_path=args.model_path, pruning=0, filename="model_SA_best.pth.tar")
         if checkpoint is not None:
             model.load_state_dict(checkpoint['state_dict'])
 
@@ -183,7 +183,7 @@ def setup_model_dataset(args):
         else:
             model = model_dict[args.arch](num_classes=classes)
         
-        checkpoint = load_checkpoint(device="cuda", save_path=f"./checkpoints/svhn/{args.arch}/", pruning=0, filename="model_SA_best.pth.tar")
+        checkpoint = load_checkpoint(device="cuda", save_path=args.model_path, pruning=0, filename="model_SA_best.pth.tar")
         if checkpoint is not None:
             model.load_state_dict(checkpoint['state_dict'])
         model.normalize = normalization
@@ -209,7 +209,7 @@ def setup_model_dataset(args):
             model = model_dict[args.arch](num_classes=classes, imagenet=True)
         else:
             model = model_dict[args.arch](num_classes=classes)
-        checkpoint = load_checkpoint(device="cuda", save_path=f"./checkpoints/cifar100/{args.arch}/", pruning=0, filename="model_SA_best.pth.tar")
+        checkpoint = load_checkpoint(device="cuda", save_path=args.model_path, pruning=0, filename="model_SA_best.pth.tar")
         if checkpoint is not None:
             model.load_state_dict(checkpoint['state_dict'])
         model.normalize = normalization
@@ -335,7 +335,7 @@ def setup_model_dataset(args):
     else:
         model = model_dict[args.arch](num_classes=classes)
 
-    checkpoint = load_checkpoint(device="cuda", save_path=f"./checkpoints/cifar10/{args.arch}/", pruning=0, filename="model_SA_best.pth.tar")
+    checkpoint = load_checkpoint(device="cuda", save_path=args.model_path, pruning=0, filename="model_SA_best.pth.tar")
     if checkpoint is not None:
             model.load_state_dict(checkpoint['state_dict'])
 

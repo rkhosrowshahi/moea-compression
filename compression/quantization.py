@@ -555,6 +555,8 @@ def compression(X, model, args):
             a = -a
     if len(X) == 3:
         K, a, b = X
+    else:
+        K = X
     K = int(K)
 
     compressed_model = copy.deepcopy(model)
